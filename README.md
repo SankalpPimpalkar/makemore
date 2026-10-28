@@ -1,53 +1,90 @@
 # makemore
 
-makemore is an autoregressive character-level language modeling codebase inspired by Andrej Karpathy's deep learning tutorial series. The repository explores statistical and neural approaches to sequence generation by predicting character transitions over a vocabulary of 26 lowercase English letters and a boundary token. It implements two distinct modeling methodologies on a dataset of 32,032 names: an empirical bigram model that tabulates transition frequencies into a normalized 2D probability matrix, and a single-layer neural network that optimizes negative log-likelihood loss through one-hot encodings, matrix multiplication, softmax normalization, and gradient descent backpropagation using PyTorch.
+makemore is an autoregressive character-level language modeling codebase inspired by Andrej Karpathy's deep learning tutorial series. The repository explores statistical and neural approaches to sequence generation by predicting character transitions over a vocabulary of 26 lowercase English letters and a boundary token. It implements three distinct modeling methodologies on a dataset of 32,032 names: an empirical bigram model that tabulates transition frequencies into a normalized 2D probability matrix, a single-layer linear neural network trained on one-hot bigram vectors, and a multi-layer perceptron (MLP) architecture based on Bengio et al. (2003) featuring learned character embeddings, fixed-length context windows, non-linear tanh activations, and mini-batch cross-entropy optimization using PyTorch.
 
 ## Table of Contents
 
 - [Project Overview](#project-overview)
 - [Key Features](#key-features)
 - [Core Components](#core-components)
-  - [1. Bigram Probability and Evaluation Model (`test.py`)](#1-bigram-probability-and-evaluation-model-testpy)
-  - [2. Neural Network Bigram Classifier (`training.py`)](#2-neural-network-bigram-classifier-trainingpy)
-  - [3. Names Training Dataset (`names.txt`)](#3-names-training-dataset-namestxt)
-  - [4. Environment Dependencies (`requirements.txt`)](#4-environment-dependencies-requirementstxt)
+  - [1. Multi-Layer Perceptron Language Model (`mlp.py`)](#1-multi-layer-perceptron-language-model-mlppy)
+  - [2. Bigram Probability and Evaluation Model (`test.py`)](#2-bigram-probability-and-evaluation-model-testpy)
+  - [3. Neural Network Bigram Classifier (`training.py`)](#3-neural-network-bigram-classifier-trainingpy)
+  - [4. Names Training Dataset (`names.txt`)](#4-names-training-dataset-namestxt)
+  - [5. Environment Dependencies (`requirements.txt`)](#5-environment-dependencies-requirementstxt)
 - [Project Structure](#project-structure)
 - [Installation & Setup](#installation--setup)
 - [Usage Examples](#usage-examples)
   - [Counting Bigram Frequencies and Sampling](#counting-bigram-frequencies-and-sampling)
   - [Evaluating Bigram Negative Log-Likelihood](#evaluating-bigram-negative-log-likelihood)
-  - [Training the Neural Network via Gradient Descent](#training-the-neural-network-via-gradient-descent)
+  - [Training the Linear Network via Full-Batch Gradient Descent](#training-the-linear-network-via-full-batch-gradient-descent)
+  - [Training the Multi-Layer Perceptron via Mini-Batch Gradient Descent](#training-the-multi-layer-perceptron-via-mini-batch-gradient-descent)
 - [How It Works](#how-it-works)
 - [Project Roadmap & Commit History](#project-roadmap--commit-history)
 
 ## Project Overview
 
-Character-level autoregressive models predict the distribution of the next character conditioned on prior context: $P(x_t \mid x_1, x_2, \dots, x_{t-1})$. The simplest non-trivial formulation is the bigram model, which applies a first-order Markov assumption where transition probabilities depend solely on the single immediately preceding character: $P(x_t \mid x_{t-1})$. This repository establishes the algorithmic mechanics of sequence modeling by contrasting exact statistical frequency counting against gradient-based neural parameter estimation on identical data.
+Autoregressive language models predict the distribution of the next character conditioned on prior context: $P(x_t \mid x_1, x_2, \dots, x_{t-1})$. The simplest non-trivial formulation is the bigram model, which restricts context to a single preceding character ($P(x_t \mid x_{t-1})$). To capture richer phonetic sequences, higher-order models condition predictions on a sliding block of previous tokens ($P(x_t \mid x_{t-n}, \dots, x_{t-1})$). This repository demonstrates the progression of character-level modeling across three paradigms: exact bigram frequency counting, linear bigram classification, and a non-linear multi-layer perceptron with distributed character embeddings.
 
-1. **First-Order Markov Formulation**: Models character transitions under the assumption that the current character depends exclusively on the previous character.
-2. **Bijective Tokenization**: Maps lowercase characters `a` through `z` and a sequence boundary token `.` into fixed integers from 0 to 26.
-3. **Empirical Frequency Tabulation**: Aggregates co-occurrence counts of all adjacent character pairs across the dataset into a 2D integer tensor $N \in \mathbb{Z}^{27 \times 27}$.
-4. **Row-Stochastic Probability Normalization**: Converts raw frequencies into categorical probability distributions summing to 1 across rows: $P \in \mathbb{R}^{27 \times 27}$.
-5. **Autoregressive Sequence Sampling**: Generates variable-length sequences iteratively using categorical multinomial sampling until the terminating token is drawn.
-6. **Negative Log-Likelihood Loss Objective**: Measures model prediction error through cross-entropy loss: $\mathcal{L} = -\frac{1}{n} \sum \log P(\text{target} \mid \text{input})$.
-7. **Neural Parameter Optimization**: Formulates transition probabilities as a linear transformation $W \in \mathbb{R}^{27 \times 27}$ optimized using full-batch gradient descent.
+1. **Markov Context Conditioning**: Supports single-character bigram context ($P(x_t \mid x_{t-1})$) and sliding multi-token context windows of size $k=3$ ($P(x_t \mid x_{t-3}, x_{t-2}, x_{t-1})$).
+2. **Bijective Tokenization**: Maps lowercase characters `a` through `z` and boundary token `.` into fixed integers from 0 to 26.
+3. **Empirical Frequency Tabulation**: Aggregates adjacent character transition counts across the corpus into a 2D integer tensor $N \in \mathbb{Z}^{27 \times 27}$.
+4. **Row-Stochastic Probability Normalization**: Normalizes raw frequencies into row probability distributions summing to 1: $P \in \mathbb{R}^{27 \times 27}$.
+5. **Continuous Character Embeddings**: Projects discrete character indices into a continuous low-dimensional vector space $C \in \mathbb{R}^{27 \times 2}$.
+6. **Non-Linear Multi-Layer Perceptron**: Passes concatenated context embeddings through a tanh hidden layer ($h \in \mathbb{R}^{100}$) and linear output projection.
+7. **Cross-Entropy Loss Minimization**: Measures negative log-likelihood loss $\mathcal{L} = -\frac{1}{n}\sum \log P(\text{target} \mid \text{context})$ using PyTorch autograd and gradient descent.
 
 ## Key Features
 
-- **Dual Modeling Paradigms**: Provides two distinct implementations for character-level bigram modeling.
-  - **Count-based Matrix Model**: Tabulates all 228,146 bigram transitions from the dataset into an explicit 2D frequency matrix.
-  - **Linear Neural Network**: Employs a single trainable linear layer without hidden activations to learn transition logits.
-- **Deterministic Tokenization System**: Encodes strings to integers and decodes integers back to strings.
-  - **Boundary Delimiter**: Uses `.` at index 0 to designate both start-of-word and end-of-word states.
-  - **Alphabet Mapping**: Assigns lowercase English letters `a` through `z` to contiguous indices 1 through 26.
-- **Autoregressive Multinomial Sampling**: Samples synthetic names token by token conditioned on previous outputs with a deterministic seed generator.
-- **Comprehensive Loss Evaluation**: Computes the exact log-likelihood, aggregate negative log-likelihood, and average per-bigram loss across the entire corpus.
-- **Pure PyTorch Gradient Descent**: Executes the forward pass, softmax normalization, loss computation, backpropagation, and weight updates directly without external training abstractions.
+- **Multiple Sequence Modeling Architectures**: Implements three modeling tiers spanning statistical and neural paradigms.
+  - **Count-based Matrix Model**: Tabulates all 228,146 bigram transitions into an explicit $27 \times 27$ frequency grid.
+  - **Linear Bigram Classifier**: Uses a single $27 \times 27$ weight matrix trained on one-hot encoded characters via full-batch gradient descent.
+  - **Multi-Layer Perceptron (MLP)**: Uses a 3-character context window with 2D embedding lookup table, 100-neuron tanh hidden layer, and 3,481 trainable parameters.
+- **Continuous Embedding Representations**: Maps 27 discrete tokens into a 2-dimensional continuous latent space $C \in \mathbb{R}^{27 \times 2}$.
+- **Mini-Batch Stochastic Optimization**: Supports both full-batch gradient descent and mini-batch stochastic gradient descent with batch size 32.
+- **Deterministic Tokenization System**: Encodes strings to integers and decodes integers back to strings using fixed dictionaries for `.` (index 0) and `a` through `z` (indices 1 through 26).
+- **Autoregressive Multinomial Sampling**: Generates novel names token by token conditioned on previous outputs using seeded PyTorch generators.
+- **Comprehensive Loss Evaluation**: Computes the exact log-likelihood, aggregate negative log-likelihood, and average per-token loss across the dataset.
 
 ## Core Components
 
-<a id="1-bigram-probability-and-evaluation-model-testpy"></a>
-### 1. Bigram Probability and Evaluation Model (`test.py`)
+<a id="1-multi-layer-perceptron-language-model-mlppy"></a>
+### 1. Multi-Layer Perceptron Language Model (`mlp.py`)
+
+Builds a dataset of character context sequences with block size 3 from `names.txt`, initializes a multi-layer perceptron with 2D character embeddings, a 100-unit hidden layer with `torch.tanh`, and a 27-unit linear output projection. Trains the network over 1,000 iterations using mini-batch gradient descent (batch size 32) and `F.cross_entropy`.
+
+| Name | Implementation | Behavior |
+| --- | --- | --- |
+| Context Builder | `ctx = [0] * block_sz` with rolling update `ctx[1:] + [ix]` | Generates $(N, 3)$ input context tensor $X$ and $(N,)$ target tensor $Y$ |
+| Embedding Table $C$ | `torch.randn((27, 2))` | Maps 27 vocabulary tokens into 2-dimensional dense embedding vectors |
+| Hidden Layer ($W_1, B_1$) | `W1 = torch.randn((6, 100))`, `B1 = torch.randn(100)` | Projects concatenated $3 \times 2 = 6$ embeddings to 100 hidden dimensions |
+| Tanh Activation | `h = torch.tanh(emb.view(-1, 6) @ W1 + B1)` | Applies non-linear activation across 100 hidden units |
+| Output Projection ($W_2, B_2$) | `W2 = torch.randn((100, 27))`, `B2 = torch.randn(27)` | Projects hidden features into 27 unnormalized logit values |
+| Mini-batch Sampler | `torch.randint(0, X.shape[0], (32,))` | Selects stochastic batches of 32 training instances per step |
+| Loss Function | `F.cross_entropy(logits, Y[ix])` | Computes softmax cross-entropy loss over batch targets |
+| Parameter Updates | `p.data += -step_sz * p.grad` | Updates all 5 parameter tensors in-place with step size 0.1 |
+
+```python
+# Forward Pass
+emb = C[X[ix]]
+h = torch.tanh(emb.view(-1, 6) @ W1 + B1)
+logits = h @ W2 + B2 
+loss = F.cross_entropy(logits, Y[ix])
+print(f"loss: {loss.item()}")
+
+step_sz = 0.1
+
+# Backward Pass
+for p in parameters:
+    p.grad = None
+loss.backward()
+
+for p in parameters:
+    p.data += -step_sz * p.grad
+```
+
+<a id="2-bigram-probability-and-evaluation-model-testpy"></a>
+### 2. Bigram Probability and Evaluation Model (`test.py`)
 
 Parses `names.txt`, populates an empirical $27 \times 27$ frequency count tensor $N$, normalizes rows to form a transition probability matrix $P$, generates sequences via `torch.multinomial`, and calculates aggregate log-likelihood and average negative log-likelihood (NLL) across all 228,146 bigrams.
 
@@ -78,8 +115,8 @@ P = N.float()
 P /= P.sum(1, keepdim=True)
 ```
 
-<a id="2-neural-network-bigram-classifier-trainingpy"></a>
-### 2. Neural Network Bigram Classifier (`training.py`)
+<a id="3-neural-network-bigram-classifier-trainingpy"></a>
+### 3. Neural Network Bigram Classifier (`training.py`)
 
 Constructs paired input and target index tensors `xs` and `ys`, initializes a trainable parameter matrix $W \in \mathbb{R}^{27 \times 27}$ with `requires_grad=True`, and executes 10,000 steps of full-batch gradient descent to minimize negative log-likelihood loss.
 
@@ -113,8 +150,8 @@ step_sz = 0.1
 W.data += -step_sz * W.grad
 ```
 
-<a id="3-names-training-dataset-namestxt"></a>
-### 3. Names Training Dataset (`names.txt`)
+<a id="4-names-training-dataset-namestxt"></a>
+### 4. Names Training Dataset (`names.txt`)
 
 Text corpus containing 32,032 lowercase English names, formatted with one name per line. Provides the data source for vocabulary construction, bigram frequency tabulation, and neural network training examples.
 
@@ -137,8 +174,8 @@ harper
 evelyn
 ```
 
-<a id="4-environment-dependencies-requirementstxt"></a>
-### 4. Environment Dependencies (`requirements.txt`)
+<a id="5-environment-dependencies-requirementstxt"></a>
+### 5. Environment Dependencies (`requirements.txt`)
 
 Specifies the pinned dependencies required to configure the Python runtime environment for tensor operations, automatic differentiation, and numerical routines.
 
@@ -169,6 +206,7 @@ typing_extensions==4.16.0
 
 ```text
 makemore/
+├── mlp.py              # Multi-layer perceptron character language model with embedding layer
 ├── names.txt           # Text corpus of 32,032 names used for vocabulary and model training
 ├── requirements.txt    # Pinned dependency specifications for PyTorch and environment
 ├── test.py             # Bigram frequency counter, autoregressive sampler, and NLL evaluator
@@ -273,7 +311,7 @@ nll=tensor(559891.7500)
 2.454094171524048
 ```
 
-### Training the Neural Network via Gradient Descent
+### Training the Linear Network via Full-Batch Gradient Descent
 
 Execute `training.py` to optimize the single-layer neural network across 10,000 gradient descent iterations:
 
@@ -292,6 +330,25 @@ The process outputs the negative log-likelihood loss at each iteration:
 ...
 ```
 
+### Training the Multi-Layer Perceptron via Mini-Batch Gradient Descent
+
+Execute `mlp.py` to train the multi-layer perceptron with 2D character embeddings and a 100-neuron hidden layer over 1,000 mini-batches of size 32:
+
+```bash
+python mlp.py
+```
+
+The script prints the cross-entropy loss computed on each mini-batch:
+
+```text
+loss: 16.99164581298828
+loss: 15.469512939453125
+loss: 12.088422775268555
+loss: 12.045230865478516
+loss: 11.481245040893555
+...
+```
+
 ## How It Works
 
 1. **Vocabulary Construction and Special Token Mapping**:
@@ -304,35 +361,29 @@ The process outputs the negative log-likelihood loss at each iteration:
    itos = {i:ch for ch,i in stoi.items()}
    ```
 
-2. **Bigram Extraction and Sequence Pairing**:
-   Wraps each name with start and end tokens `.` and iterates through adjacent character pairs $(c_t, c_{t+1})$ to extract training examples.
+2. **Dataset Construction: Bigrams and Context Windows**:
+   - For bigram models, each name is padded with `.` at start and end, extracting consecutive pairs $(c_t, c_{t+1})$.
+   - For the multi-layer perceptron, a sliding context window of size $k=3$ is maintained:
    ```python
+   block_sz = 3
+   X, Y = [], []
    for w in words:
-       chrs = ["."] + list(w) + ["."]
-       for ch1, ch2 in zip(chrs, chrs[1:]):
-           i1, i2 = stoi[ch1], stoi[ch2]
-           xs.append(i1)
-           ys.append(i2)
+       ctx = [0] * block_sz
+       for ch in w + '.':
+           ix = stoi[ch]
+           X.append(ctx)
+           Y.append(ix)
+           ctx = ctx[1:] + [ix]
    ```
 
-3. **Empirical Probability Normalization**:
+3. **Empirical Probability Normalization (Statistical Baseline)**:
    Populates the frequency tensor $N \in \mathbb{Z}^{27 \times 27}$ and normalizes each row by its sum to obtain conditional probabilities $P_{i,j} = \frac{N_{i,j}}{\sum_{k=0}^{26} N_{i,k}}$.
    ```python
    P = N.float()
    P /= P.sum(1, keepdim=True)
    ```
 
-4. **Negative Log-Likelihood Evaluation**:
-   Computes the log probability for each transition and aggregates the negative log-likelihood across all $n = 228,146$ bigrams:
-   $$\mathcal{L}_{\text{NLL}} = -\frac{1}{n} \sum_{i=1}^n \log P(y^{(i)} \mid x^{(i)})$$
-   ```python
-   prob = P[i1, i2]
-   logprob = torch.log(prob)
-   log_likelihood += logprob
-   n += 1
-   ```
-
-5. **Neural Forward Pass and Softmax Normalization**:
+4. **Linear Bigram Forward Pass and Softmax**:
    Converts input character indices into one-hot vectors $x_{\text{enc}} \in \mathbb{R}^{228146 \times 27}$, computes logits via linear transformation $z = x_{\text{enc}} W$, and calculates normalized probabilities using softmax:
    $$P(y = j \mid x) = \frac{\exp(z_j)}{\sum_{k=0}^{26} \exp(z_k)}$$
    ```python
@@ -343,14 +394,24 @@ The process outputs the negative log-likelihood loss at each iteration:
    loss = -probs[torch.arange(len(ys)), ys].log().mean()
    ```
 
-6. **Autograd Backpropagation and Parameter Updates**:
-   Computes gradients $\nabla_W \mathcal{L}$ via PyTorch autograd and performs an in-place gradient descent step with learning rate $\eta = 0.1$:
-   $$W \leftarrow W - \eta \nabla_W \mathcal{L}$$
+5. **Multi-Layer Perceptron with Distributed Embeddings**:
+   Embeds context tokens through embedding table $C \in \mathbb{R}^{27 \times 2}$, concatenates the vectors into shape $(B, 6)$, passes through a tanh hidden layer ($W_1 \in \mathbb{R}^{6 \times 100}, B_1 \in \mathbb{R}^{100}$), projects to logits ($W_2 \in \mathbb{R}^{100 \times 27}, B_2 \in \mathbb{R}^{27}$), and calculates cross-entropy loss:
    ```python
-   W.grad = None
+   emb = C[X[ix]]
+   h = torch.tanh(emb.view(-1, 6) @ W1 + B1)
+   logits = h @ W2 + B2 
+   loss = F.cross_entropy(logits, Y[ix])
+   ```
+
+6. **Autograd Backpropagation and Parameter Updates**:
+   Computes analytical gradients $\nabla_\theta \mathcal{L}$ for all parameters using `loss.backward()` and updates values using gradient descent:
+   $$\theta \leftarrow \theta - \eta \nabla_\theta \mathcal{L}$$
+   ```python
+   for p in parameters:
+       p.grad = None
    loss.backward()
-   step_sz = 0.1
-   W.data += -step_sz * W.grad
+   for p in parameters:
+       p.data += -step_sz * p.grad
    ```
 
 ## Project Roadmap & Commit History
@@ -360,6 +421,7 @@ The process outputs the negative log-likelihood loss at each iteration:
    - Added `requirements.txt` documenting environment dependencies for PyTorch and numerical libraries.
    - Added initial baseline script `main.py` with bigram count matrix generation and multinomial sampling.
 
-2. **Metric Evaluation and Neural Network Implementation** (`Current`)
+2. **Metric Evaluation and Model Architectures** (`Current`)
    - Replaced initial script with `test.py` to add full-dataset negative log-likelihood calculation and transition diagnostics.
-   - Introduced `training.py` implementing single-layer neural network language modeling with one-hot input encoding, softmax normalization, and iterative gradient descent optimization.
+   - Introduced `training.py` implementing single-layer linear bigram modeling with one-hot input encoding, softmax normalization, and full-batch gradient descent.
+   - Added `mlp.py` implementing a multi-layer perceptron language model (Bengio et al. 2003) with 2D character embedding tables, context window size 3, tanh non-linearities, and mini-batch stochastic gradient descent.
